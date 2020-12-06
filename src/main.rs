@@ -52,7 +52,7 @@ const Z_FAR: f32 = 10.;
 
 const VS_STR: &str = include_str!("vs.glsl");
 const FS_STR: &str = include_str!("fs.glsl");
-const BLURFS_STR: &str = include_str!("blurfs.glsl");
+// const BLURFS_STR: &str = include_str!("blurfs.glsl");
 
 #[derive(Debug)]
 struct Obj {
@@ -158,6 +158,7 @@ fn main() {
 fn main_loop(mut surface: GlfwSurface) {
 	let back_buffer = surface.back_buffer().unwrap();
 	let [width, height] = back_buffer.size();
+	// let offscreen_buffer = surface.new_framebuffer<Dim2, (size, mipmaps, sampler)()
 	let projection = perspective(FOVY, width as f32 / height as f32, Z_NEAR, Z_FAR);
 	let view = Matrix4::<f32>::look_at(Point3::new(2., 2., 2.), Point3::origin(), Vector3::unit_y());
 	let mesh = Obj::load("suzanne.obj").unwrap().to_tess(&mut surface).unwrap();
@@ -169,11 +170,11 @@ fn main_loop(mut surface: GlfwSurface) {
 		.unwrap()
 		.ignore_warnings();
 
-	let mut blurprogram = surface
-		.new_shader_program::<VertexSemantics, (), ()>()
-		.from_strings(None, None, None, BLURFS_STR)
-		.unwrap()
-		.ignore_warnings()
+	// let mut blurprogram = surface
+	// 	.new_shader_program::<VertexSemantics, (), ()>()
+	// 	.from_strings(None, None, None, BLURFS_STR)
+	// 	.unwrap()
+	// 	.ignore_warnings()
 
 	'app: loop {
 		surface.window.glfw.poll_events();
