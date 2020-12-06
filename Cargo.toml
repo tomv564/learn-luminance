@@ -1,0 +1,18 @@
+[package]
+name = "learn-luminance"
+version = "0.1.0"
+authors = ["Tom van Ommeren <tom.vanommeren@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+luminance = "0.43.1" #"0.42"
+luminance-glfw = "0.14"
+luminance-windowing = "0.9"
+glfw = "0.41" #"0.39"
+luminance-derive = "0.6"
+wavefront_obj = "7"
+luminance-front = "0.3"
+cgmath = "0.17"
+try-guard = "0.2"
