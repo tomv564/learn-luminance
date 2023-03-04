@@ -16,9 +16,10 @@ use std::io::Read as _;
 use std::{collections::HashMap, path::Path, time::Instant};
 use try_guard::verify;
 use wavefront_obj::obj;
+use luminance::{pixel::{RGBA32F, Depth32F, Floating, R32F}, texture::{Dim2, Sampler}, pipeline::TextureBinding};
 
 
-
+// World render
 
 #[derive(Copy, Clone, Debug, Semantics)]
 pub enum VertexSemantics {
@@ -38,7 +39,7 @@ pub struct Vertex {
 }
 
 #[derive(Debug, UniformInterface)]
-struct ShaderInterface {
+struct WorldShaderInterface {
 	#[uniform(unbound)]
 	projection: Uniform<[[f32; 4]; 4]>,
 	#[uniform(unbound)]
@@ -52,7 +53,11 @@ const Z_FAR: f32 = 10.;
 
 const VS_STR: &str = include_str!("vs.glsl");
 const FS_STR: &str = include_str!("fs.glsl");
-// const BLURFS_STR: &str = include_str!("blurfs.glsl");
+
+const COPY_VS_STR: &str = include_str!("copy_vs.glsl");
+const COPY_FS_STR: &str = include_str!("copy_fs.glsl");
+
+const BLUR_FS_STR: &str = include_str!("blur_fs.glsl");
 
 #[derive(Debug)]
 struct Obj {
@@ -134,6 +139,13 @@ impl Obj {
   }
 }
 
+#[derive(UniformInterface)]
+struct CopyShaderInterface {
+  // we only need the source texture (from the framebuffer) to fetch from
+  #[uniform(name = "source_texture")]
+  texture: Uniform<TextureBinding<Dim2, Floating>>,
+}
+
 
 fn main() {
 
@@ -159,16 +171,33 @@ fn main_loop(mut surface: GlfwSurface) {
 	let back_buffer = surface.back_buffer().unwrap();
 	let [width, height] = back_buffer.size();
 	// let offscreen_buffer = surface.new_framebuffer<Dim2, (size, mipmaps, sampler)()
+	let mut offscreen_buffer = surface.new_framebuffer::<Dim2, RGBA32F, Depth32F>(back_buffer.size(), 0, Sampler::default()).unwrap();
 	let projection = perspective(FOVY, width as f32 / height as f32, Z_NEAR, Z_FAR);
 	let view = Matrix4::<f32>::look_at(Point3::new(2., 2., 2.), Point3::origin(), Vector3::unit_y());
 	let mesh = Obj::load("suzanne.obj").unwrap().to_tess(&mut surface).unwrap();
 	let time = Instant::now();
 
-	let mut program = surface
-		.new_shader_program::<VertexSemantics, (), ShaderInterface>()
+	let mut world_program = surface
+		.new_shader_program::<VertexSemantics, (), WorldShaderInterface>()
 		.from_strings(VS_STR, None, None, FS_STR)
 		.unwrap()
 		.ignore_warnings();
+
+	// copy pass
+
+	let quad = surface
+	    .new_tess()
+	    .set_vertex_nb(4)
+	    .set_mode(Mode::TriangleFan)
+	    .build()
+	    .unwrap();
+
+   	let mut copy_program = surface
+		.new_shader_program::<(), (), CopyShaderInterface>()
+		.from_strings(COPY_VS_STR, None, None, COPY_FS_STR)
+		.unwrap()
+		.ignore_warnings();
+
 
 	// let mut blurprogram = surface
 	// 	.new_shader_program::<VertexSemantics, (), ()>()
@@ -192,11 +221,11 @@ fn main_loop(mut surface: GlfwSurface) {
 		let t = time.elapsed().as_millis() as f32 * 1e-3;
 		let color = [t.cos(), t.sin(), 0.5, 1.];
 
-		let render = surface.new_pipeline_gate().pipeline(
-			&back_buffer,
+		let world_render = surface.new_pipeline_gate().pipeline(
+			&offscreen_buffer,
 			&PipelineState::default().set_clear_color(color),
 			|_, mut shd_gate| {
-				shd_gate.shade(&mut program, |mut iface, uni, mut rdr_gate| {
+				shd_gate.shade(&mut world_program, |mut iface, uni, mut rdr_gate| {
 					iface.set(&uni.projection, projection.into());
 					iface.set(&uni.view, view.into());
 
@@ -207,7 +236,30 @@ fn main_loop(mut surface: GlfwSurface) {
 			},
 		).assume();
 
-		if render.is_ok() {
+		if world_render.is_err() {
+     		break 'app;
+    	}
+
+		let copy_render = surface.new_pipeline_gate().pipeline(
+			&back_buffer,
+			&PipelineState::default(),
+			|pipeline, mut shd_gate| {
+				// bind to offscreen buffer's color slots.
+				let texture = offscreen_buffer.color_slot();
+		        let bound_texture = pipeline.bind_texture(texture)?;
+
+				shd_gate.shade(&mut copy_program, |mut iface, uni, mut rdr_gate| {
+
+					iface.set(&uni.texture, bound_texture.binding());
+
+					rdr_gate.render(&RenderState::default(), |mut tess_gate| {
+						tess_gate.render(&quad)
+					})
+				})
+			},
+		).assume();
+
+		if copy_render.is_ok() {
 			surface.window.swap_buffers();
 		} else {
 			break 'app;
